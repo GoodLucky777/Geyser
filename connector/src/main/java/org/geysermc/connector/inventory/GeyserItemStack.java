@@ -30,9 +30,8 @@ import com.github.steveice10.opennbt.tag.builtin.CompoundTag;
 import com.nukkitx.protocol.bedrock.data.inventory.ItemData;
 import lombok.Data;
 import org.geysermc.connector.network.session.GeyserSession;
-import org.geysermc.connector.network.translators.item.ItemEntry;
-import org.geysermc.connector.network.translators.item.ItemRegistry;
 import org.geysermc.connector.network.translators.item.ItemTranslator;
+import org.geysermc.connector.registry.type.ItemMapping;
 
 @Data
 public class GeyserItemStack {
@@ -101,11 +100,12 @@ public class GeyserItemStack {
     public ItemData getItemData(GeyserSession session) {
         ItemData itemData = ItemTranslator.translateToBedrock(session, getItemStack());
         itemData.setNetId(getNetId());
+        itemData.setUsingNetId(true); // Seems silly - this should probably be on the protocol level
         return itemData;
     }
 
-    public ItemEntry getItemEntry() {
-        return ItemRegistry.ITEM_ENTRIES.get(getJavaId());
+    public ItemMapping getMapping(GeyserSession session) {
+        return session.getItemMappings().getMapping(this.javaId);
     }
 
     public boolean isEmpty() {

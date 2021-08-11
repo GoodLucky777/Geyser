@@ -26,6 +26,7 @@
 package org.geysermc.connector.network.translators.world.block.entity;
 
 import com.github.steveice10.opennbt.tag.builtin.CompoundTag;
+import com.github.steveice10.opennbt.tag.builtin.Tag;
 import com.nukkitx.nbt.NbtMapBuilder;
 import org.geysermc.connector.network.translators.chat.MessageTranslator;
 import org.geysermc.connector.utils.SignUtils;
@@ -33,64 +34,68 @@ import org.geysermc.connector.utils.SignUtils;
 @BlockEntity(name = "Sign")
 public class SignBlockEntityTranslator extends BlockEntityTranslator {
     /**
-     * Maps a color stored in a sign's Color tag to a Bedrock Edition formatting code.
-     * <br>
-     * The color names correspond to dye names, because of this we can't use {@link MessageTranslator#getColor(String)}.
+     * Maps a color stored in a sign's Color tag to its ARGB value.
      *
      * @param javaColor The dye color stored in the sign's Color tag.
-     * @return A Bedrock Edition formatting code for valid dye colors, otherwise an empty string.
+     * @return Java Edition's integer matching the color specified
      */
-    private String getBedrockSignColor(String javaColor) {
-        String base = "\u00a7";
+    private int getBedrockSignColor(String javaColor) {
+        //TODO create a DyeColor class and combine with FireworkColor???
+        int dyeColor;
         switch (javaColor) {
             case "white":
-                base += 'f';
+                dyeColor = 16383998;
                 break;
             case "orange":
-                base += '6';
+                dyeColor = 16351261;
                 break;
             case "magenta":
-            case "purple":
-                base += '5';
+                dyeColor = 13061821;
                 break;
             case "light_blue":
-                base += 'b';
+                dyeColor = 3847130;
                 break;
             case "yellow":
-                base += 'e';
+                dyeColor = 16701501;
                 break;
             case "lime":
-                base += 'a';
+                dyeColor = 8439583;
                 break;
             case "pink":
-                base += 'd';
+                dyeColor = 15961002;
                 break;
             case "gray":
-                base += '8';
+                dyeColor = 4673362;
                 break;
             case "light_gray":
-                base += '7';
+                dyeColor = 10329495;
                 break;
             case "cyan":
-                base += '3';
+                dyeColor = 1481884;
+                break;
+            case "purple":
+                dyeColor = 8991416;
                 break;
             case "blue":
-                base += '9';
+                dyeColor = 3949738;
                 break;
-            case "brown": // Brown does not have a bedrock counterpart.
-            case "red": // In Java Edition light red (&c) can only be applied using commands. Red dye gives &4.
-                base += '4';
+            case "brown":
+                dyeColor = 8606770;
                 break;
             case "green":
-                base += '2';
+                dyeColor = 6192150;
+                break;
+            case "red":
+                dyeColor = 11546150;
                 break;
             case "black":
-                base += '0';
-                break;
             default:
-                return "";
+                // The proper Java color is 1908001, but this does not render well with glow text.
+                dyeColor = 0;
+                break;
         }
-        return base;
+        // Add the transparency of the color, too.
+        return dyeColor | (255 << 24);
     }
 
     @Override
@@ -101,33 +106,45 @@ public class SignBlockEntityTranslator extends BlockEntityTranslator {
             String signLine = getOrDefault(tag.getValue().get("Text" + currentLine), "");
             signLine = MessageTranslator.convertMessageLenient(signLine);
 
-            // Trim any trailing formatting codes
-            if (signLine.length() > 2 && signLine.toCharArray()[signLine.length() - 2] == '\u00a7') {
-                signLine = signLine.substring(0, signLine.length() - 2);
-            }
-
             // Check the character width on the sign to ensure there is no overflow that is usually hidden
             // to Java Edition clients but will appear to Bedrock clients
             int signWidth = 0;
             StringBuilder finalSignLine = new StringBuilder();
+            boolean previousCharacterWasFormatting = false; // Color changes do not count for maximum width
             for (char c : signLine.toCharArray()) {
-                signWidth += SignUtils.getCharacterWidth(c);
+                if (c == '\u00a7') {
+                    // Don't count this character
+                    previousCharacterWasFormatting = true;
+                } else if (previousCharacterWasFormatting) {
+                    // Don't count this character either
+                    previousCharacterWasFormatting = false;
+                } else {
+                    signWidth += SignUtils.getCharacterWidth(c);
+                }
+
                 if (signWidth <= SignUtils.BEDROCK_CHARACTER_WIDTH_MAX) {
                     finalSignLine.append(c);
                 } else {
+                    // Adding the character would make Bedrock move to the next line - Java doesn't do that, so we do not want to
                     break;
                 }
             }
 
-            // Java Edition 1.14 added the ability to change the text color of the whole sign using dye
-            if (tag.contains("Color")) {
-                signText.append(getBedrockSignColor(tag.get("Color").getValue().toString()));
-            }
-
-            signText.append(finalSignLine.toString());
+            signText.append(finalSignLine);
             signText.append("\n");
         }
 
-        builder.put("Text", signText.toString());
+        builder.putString("Text", signText.toString());
+
+        // Java Edition 1.14 added the ability to change the text color of the whole sign using dye
+        Tag color = tag.get("Color");
+        if (color != null) {
+            builder.putInt("SignTextColor", getBedrockSignColor(color.getValue().toString()));
+        }
+
+        // Glowing text
+        boolean isGlowing = getOrDefault(tag.getValue().get("GlowingText"), (byte) 0) != (byte) 0;
+        builder.putBoolean("IgnoreLighting", isGlowing);
+        builder.putBoolean("TextIgnoreLegacyBugResolved", isGlowing); // ??? required
     }
 }
